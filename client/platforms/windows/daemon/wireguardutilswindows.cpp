@@ -11,7 +11,9 @@
 #include <ws2ipdef.h>
 
 #include <QFileInfo>
+#include <QScopeGuard>
 
+#include "bypassrouter_win.h"
 #include "leakdetector.h"
 #include "logger.h"
 #include "windowsfirewall.h"
@@ -126,6 +128,14 @@ bool WireguardUtilsWindows::addInterface(const InterfaceConfig& config) {
   m_luid = luid.Value;
   m_routeMonitor = new WindowsRouteMonitor(luid.Value, this);
 
+  // Start bypass router if AMNEZIA_BYPASS_SUBNETS_FILE is set.
+  // This redirects packets for specified subnets to the physical interface
+  // instead of the tunnel, without adding routes to the routing table.
+  if (!m_bypassRouter) {
+    m_bypassRouter = new BypassRouter(this);
+  }
+  m_bypassRouter->start(luid.Value);
+
   if (config.m_killSwitchEnabled) {
     // Enable the windows firewall
     NET_IFINDEX ifindex;
@@ -139,6 +149,12 @@ bool WireguardUtilsWindows::addInterface(const InterfaceConfig& config) {
 }
 
 bool WireguardUtilsWindows::deleteInterface() {
+  if (m_bypassRouter) {
+    m_bypassRouter->stop();
+    delete m_bypassRouter;
+    m_bypassRouter = nullptr;
+  }
+
   if (m_routeMonitor) {
     m_routeMonitor->deleteLater();
   }

@@ -15,6 +15,7 @@
 #include "windowsroutemonitor.h"
 #include "windowstunnelservice.h"
 
+class BypassRouter;
 class WindowsFirewall;
 class WindowsRouteMonitor;
 
@@ -57,6 +58,7 @@ class WireguardUtilsWindows final : public WireguardUtils {
   WindowsTunnelService m_tunnel;
   QPointer<WindowsRouteMonitor> m_routeMonitor;
   QPointer<WindowsFirewall> m_firewall;
+  BypassRouter* m_bypassRouter = nullptr;
 };
 
 #endif  // WIREGUARDUTILSWINDOWS_H

@@ -204,6 +204,8 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/windowspingsender.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/windowsnetworkwatcher.h
         ${CMAKE_CURRENT_LIST_DIR}/../../client/daemon/daemonerrors.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/bypassrouter_win.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/prefixtrie.h
     )
 
     set(SOURCES ${SOURCES}
@@ -224,6 +226,8 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/windowspingsender.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/windowsnetworkwatcher.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/windowsutils.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/bypassrouter_win.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/prefixtrie.cpp
     )
 
     set(RESOURCES ${RESOURCES}
