@@ -1,0 +1,88 @@
+name: 'Build Windows bypass router'
+
+# Минимальный workflow только для проверки сборки нашего изменения.
+# Не подписывает, не делает MSI/installer. На выходе — папка с
+# AmneziaVPN-service.exe + Qt DLLs + WinDivert.dll/sys.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+env:
+  QT_VERSION: 6.10.1
+  QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+          fetch-depth: 1
+
+      - name: 'Install Qt'
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtremoteobjects qt5compat qtshadertools'
+          dir: ${{ runner.temp }}
+          setup-python: 'true'
+          set-env: 'true'
+          aqtversion: '==3.3.0'
+          py7zrversion: '==0.22.*'
+          extra: '--base ${{ env.QT_MIRROR }}'
+
+      - name: 'Setup MSVC'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: 'x64'
+
+      - name: 'Download WinDivert SDK'
+        shell: powershell
+        run: |
+          $url = "https://reqrypt.org/download/WinDivert-2.2.2-A.zip"
+          Invoke-WebRequest -Uri $url -OutFile WinDivert.zip
+          Expand-Archive WinDivert.zip -DestinationPath WinDivert
+          New-Item -ItemType Directory -Force WinDivert-runtime | Out-Null
+          Copy-Item "WinDivert\WinDivert-2.2.2-A\x64\WinDivert.dll" WinDivert-runtime\
+          Copy-Item "WinDivert\WinDivert-2.2.2-A\x64\WinDivert64.sys" WinDivert-runtime\
+
+      - name: 'Configure CMake'
+        shell: cmd
+        run: |
+          set QT_BIN_DIR=${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2022_64\bin
+          cmake -S . -B build ^
+                -DCMAKE_BUILD_TYPE=Release ^
+                -DCMAKE_PREFIX_PATH="%QT_BIN_DIR%" ^
+                -G "Visual Studio 17 2022" -A x64
+
+      - name: 'Build AmneziaVPN-service'
+        shell: cmd
+        run: |
+          cmake --build build --config Release --target AmneziaVPN-service -- /p:UseMultiToolTask=true /m
+
+      - name: 'Stage binaries with Qt + WinDivert runtime'
+        shell: powershell
+        run: |
+          $stage = "stage"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "build\service\server\Release\AmneziaVPN-service.exe" $stage
+          Copy-Item "WinDivert-runtime\*" $stage
+          $qtBin = "${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2022_64\bin"
+          & "$qtBin\windeployqt.exe" --release --no-translations "$stage\AmneziaVPN-service.exe"
+          Get-ChildItem $stage | Format-Table Name, Length
+
+      - name: 'Upload artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN-service-bypass
+          path: stage
+          retention-days: 14

@@ -1,61 +1,68 @@
-#ifndef PREFIX_TRIE_H
-#define PREFIX_TRIE_H
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <QFile>
-#include <QByteArray>
-#include <QMutex>
+// IPv4 longest-prefix trie.
+//
+// Designed to hold ~12k CIDR entries and answer host-IP membership queries
+// in O(32) bit-walks (~300 ns on commodity hardware).
+//
+// Built once, then immutable: callers wrap finished tries in
+// std::shared_ptr<const PrefixTrie> and atomically swap them on hot reload.
+// Lookups are lock-free.
+
+#ifndef PREFIXTRIE_H
+#define PREFIXTRIE_H
+
 #include <cstdint>
+#include <memory>
+#include <vector>
 
-/*
- * IPv4 prefix trie (radix tree, 4-bit per level).
- * Insert CIDR subnets, then query individual host IPs in O(32) time.
- * All operations are thread-safe when using swapLoad().
- */
+#include <QString>
+
 class PrefixTrie {
-public:
-    PrefixTrie() = default;
-    ~PrefixTrie();
+ public:
+  PrefixTrie();
+  ~PrefixTrie();
 
-    // Non-copyable but movable
-    PrefixTrie(const PrefixTrie&) = delete;
-    PrefixTrie& operator=(const PrefixTrie&) = delete;
-    PrefixTrie(PrefixTrie&& other) noexcept;
-    PrefixTrie& operator=(PrefixTrie&& other) noexcept;
+  PrefixTrie(const PrefixTrie&) = delete;
+  PrefixTrie& operator=(const PrefixTrie&) = delete;
+  PrefixTrie(PrefixTrie&&) noexcept = default;
+  PrefixTrie& operator=(PrefixTrie&&) noexcept = default;
 
-    void clear();
+  // Insert one CIDR prefix. ip is in host byte order; prefixLen is 0..32.
+  // Out-of-range prefixLen is clamped silently.
+  void insert(uint32_t ip, int prefixLen);
 
-    // Insert a CIDR prefix. ip is in host byte order, prefixLen is 0..32.
-    void insert(uint32_t ip, int prefixLen);
+  // Returns true if any inserted prefix covers ip (host byte order).
+  bool contains(uint32_t ip) const noexcept;
 
-    // Query: does this host IP fall under any inserted prefix?
-    // ip is in host byte order.
-    bool contains(uint32_t ip) const;
+  // Number of distinct prefixes inserted. Counts duplicates as 1.
+  int size() const noexcept { return m_size; }
 
-    // Load from a text file, one CIDR per line (e.g. "10.0.0.0/8").
-    // Lines starting with '#' are skipped. Empty lines are skipped.
-    // Returns the number of prefixes loaded, or -1 on error.
-    int loadFromFile(const QString& path);
+  // Parse one CIDR string ("A.B.C.D/N"). Returns true on success.
+  static bool parseCidr(const QString& cidr, uint32_t* ipHost, int* prefixLen);
 
-    // Atomic swap for hot-reload. Replaces the trie contents in one step.
-    void swapLoad(PrefixTrie&& newTrie);
+  // Build a trie from a text file. One CIDR per line.
+  // Lines starting with '#' and blank lines are ignored.
+  // Returns null on I/O failure or if zero valid prefixes were parsed.
+  // outLoaded / outRejected receive parse counts when non-null.
+  static std::shared_ptr<const PrefixTrie> fromFile(const QString& path,
+                                                    int* outLoaded = nullptr,
+                                                    int* outRejected = nullptr);
 
-    // Number of prefixes stored
-    int count() const { return m_count; }
+ private:
+  struct Node {
+    int32_t child[2] = {-1, -1};
+    bool endpoint = false;
+  };
 
-private:
-    static constexpr int CHILDREN = 2;
+  // Append a fresh node and return its index in m_nodes.
+  int32_t newNode();
 
-    struct Node {
-        Node* children[CHILDREN] = {};
-        bool isEndpoint = false;
-    };
-
-    Node* newNode();
-    void freeTree(Node* node);
-
-    Node* m_root = nullptr;
-    int m_count = 0;
-    QMutex m_mutex;
+  // Indices instead of pointers: vector resize never invalidates them.
+  std::vector<Node> m_nodes;
+  int m_size = 0;
 };
 
-#endif // PREFIX_TRIE_H
+#endif  // PREFIXTRIE_H

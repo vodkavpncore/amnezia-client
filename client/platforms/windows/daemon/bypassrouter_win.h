@@ -1,87 +1,96 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// WinDivert-based split-tunnel router for Windows.
+//
+// While the WireGuard adapter advertises a 0.0.0.0/0 route, every IP packet
+// the OS routes to the tunnel passes through this router first. Packets
+// whose destination falls inside any CIDR loaded from
+// AMNEZIA_BYPASS_SUBNETS_FILE are NAT-translated and redirected to the
+// physical NIC; everything else flows to the tunnel untouched.
+//
+// Symmetric inbound translation reverses the NAT for response packets, so
+// from the application's perspective the connection still appears to use
+// the tunnel-side socket (correct binding, correct local IP).
+//
+// Why not just add 12k routes? On real machines, a large WFP/NDIS hook
+// surface (AV, EDR, third-party firewalls) makes 12k FIB entries cause
+// measurable per-packet overhead. WinDivert keeps the FIB clean.
+//
+// Usage:
+//   auto* r = new BypassRouter(parent);
+//   r->start(tunnelLuid);   // safe no-op if AMNEZIA_BYPASS_SUBNETS_FILE unset
+//   ...
+//   r->stop();
+//
+// All public methods must be called from the same thread (the owner's
+// thread, typically the WireGuard daemon thread). Internal worker thread
+// is private.
+
 #ifndef BYPASSROUTER_WIN_H
 #define BYPASSROUTER_WIN_H
 
+#include <windows.h>
+
 #include <QObject>
-#include <QThread>
 #include <QString>
-#include <QHash>
+#include <atomic>
+#include <memory>
+#include <thread>
 
-#include <Windows.h>
+class PrefixTrie;
 
-#include "prefixtrie.h"
-
-/*
- * WinDivert-based bypass router for Windows.
- *
- * Intercepts outbound packets at the network layer before they reach
- * the WireGuard tunnel interface. Packets whose destination IP matches
- * a CIDR prefix in the bypass trie are redirected to the physical
- * (non-tunnel) network interface. Everything else proceeds to the
- * tunnel normally.
- *
- * Usage:
- *   1. Create BypassRouter
- *   2. Call start() before VPN connection (pass tunnel interface LUID)
- *   3. Call stop() after VPN disconnection
- *
- * Bypass subnets are loaded from the environment variable
- * AMNEZIA_BYPASS_SUBNETS_FILE (path to a text file with one CIDR per line).
- */
 class BypassRouter : public QObject {
-    Q_OBJECT
-    Q_DISABLE_COPY_MOVE(BypassRouter)
+  Q_OBJECT
+  Q_DISABLE_COPY_MOVE(BypassRouter)
 
-public:
-    explicit BypassRouter(QObject* parent = nullptr);
-    ~BypassRouter();
+ public:
+  explicit BypassRouter(QObject* parent = nullptr);
+  ~BypassRouter() override;
 
-    /*
-     * Start the bypass router.
-     * Reads AMNEZIA_BYPASS_SUBNETS_FILE env var, loads CIDR prefixes,
-     * starts WinDivert interception in a background thread.
-     *
-     * Returns true if started successfully.
-     * Returns false if no bypass file configured (not an error) or on failure.
-     */
-    bool start(quint64 tunnelLuid);
+  // Bring the router up. Looks at AMNEZIA_BYPASS_SUBNETS_FILE; if unset or
+  // empty, returns false silently (split-tunnel disabled, nothing to do).
+  // tunnelLuid is the LUID of the WireGuard adapter just created.
+  bool start(quint64 tunnelLuid);
 
-    // Stop interception and release WinDivert handle.
-    void stop();
+  // Bring the router down. Idempotent; safe from any state.
+  void stop();
 
-    // Whether the bypass router is currently active
-    bool isActive() const { return m_active; }
+  // Reload the bypass list from disk without dropping in-flight connections.
+  // Lock-free for the worker (atomic shared_ptr swap on the trie).
+  void reloadSubnets();
 
-    // Number of loaded bypass prefixes
-    int prefixCount() const;
+  bool isActive() const noexcept { return m_active.load(std::memory_order_acquire); }
 
-    // Reload subnets from file (hot-reload without stop/start)
-    void reloadSubnets();
+ private:
+  // Worker entry. Runs until shutdown is signalled.
+  void workerLoop();
 
-private:
-    // Thread entry point
-    void runLoop(HANDLE wdHandle);
+  // Find the LUID, NDIS interface index and primary IPv4 address of the
+  // outbound physical interface (default route, lowest metric, not tunnel).
+  // Returns false if no usable interface is found.
+  struct PhysIface {
+    quint64 luid = 0;
+    quint32 ifIdx = 0;
+    uint32_t ipv4 = 0;  // host byte order
+  };
+  static bool resolvePhysicalInterface(quint64 tunnelLuid, PhysIface* out);
+  static quint32 luidToIfIndex(quint64 luid);
 
-    // Find the physical (non-tunnel) interface index from the routing table
-    quint32 findPhysicalIfIndex(quint64 tunnelLuid) const;
+  std::atomic<bool> m_active{false};
+  quint64 m_tunnelLuid = 0;
+  quint32 m_tunnelIfIdx = 0;
+  PhysIface m_phys;
+  QString m_subnetsFilePath;
 
-    // Read destination IPv4 address from raw IP header (network byte order → host)
-    static uint32_t parseDstIPv4(const uint8_t* packet, UINT packetLen);
+  // The trie is replaced wholesale on reload. Worker reads via load();
+  // main thread publishes via store(). C++20 atomic<shared_ptr>.
+  std::atomic<std::shared_ptr<const PrefixTrie>> m_trie;
 
-    // Check if packet is UDP (for caching purposes)
-    static bool isUDPPacket(const uint8_t* packet, UINT packetLen);
-
-    bool m_active = false;
-    quint64 m_tunnelLuid = 0;
-    quint32 m_physicalIfIndex = 0;
-    QString m_subnetsFilePath;
-
-    PrefixTrie m_trie;
-
-    // UDP dst-ip → bypass decision cache (avoids trie lookup on every UDP packet)
-    QHash<uint32_t, bool> m_udpCache;
-
-    QThread m_thread;
-    volatile bool m_running = false;
+  // WinDivert handle owned by the worker thread once started.
+  HANDLE m_handle = INVALID_HANDLE_VALUE;
+  std::thread m_worker;
 };
 
-#endif // BYPASSROUTER_WIN_H
+#endif  // BYPASSROUTER_WIN_H

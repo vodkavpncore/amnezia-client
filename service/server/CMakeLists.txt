@@ -206,6 +206,8 @@ if(WIN32)
         ${CMAKE_CURRENT_LIST_DIR}/../../client/daemon/daemonerrors.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/bypassrouter_win.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/prefixtrie.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/nattable.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/windivert_shim.h
     )
 
     set(SOURCES ${SOURCES}
@@ -228,6 +230,7 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/windowsutils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/bypassrouter_win.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/prefixtrie.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../client/platforms/windows/daemon/nattable.cpp
     )
 
     set(RESOURCES ${RESOURCES}

@@ -11,7 +11,6 @@
 #include <ws2ipdef.h>
 
 #include <QFileInfo>
-#include <QScopeGuard>
 
 #include "bypassrouter_win.h"
 #include "leakdetector.h"
