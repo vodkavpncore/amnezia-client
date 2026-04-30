@@ -4,12 +4,12 @@
 
 #include "bypassrouter_win.h"
 
-// _WINSOCKAPI_ is defined project-wide so <Windows.h> skips winsock 1.
+// _WINSOCKAPI_ is defined project-wide so <windows.h> skips winsock 1.x.
+// winsock2.h must come before any header that pulls ws2def.h transitively.
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
 #include <iphlpapi.h>
-#include <ws2def.h>
 
 #include <QCoreApplication>
 #include <QDateTime>

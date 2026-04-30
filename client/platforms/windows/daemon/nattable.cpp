@@ -4,7 +4,11 @@
 
 #include "nattable.h"
 
-#include <ws2def.h>  // IPPROTO_TCP / IPPROTO_UDP
+// winsock2.h pulls in ws2def.h for IPPROTO_TCP/UDP and sets up the
+// _WINSOCK2_H sentinel so ws2def's MIGRATION ERROR guard doesn't fire.
+// Including ws2def.h directly while the project-wide _WINSOCKAPI_ macro
+// is defined would trigger that error.
+#include <winsock2.h>
 
 #include "logger.h"
 
