@@ -31,6 +31,13 @@
 #ifndef BYPASSROUTER_WIN_H
 #define BYPASSROUTER_WIN_H
 
+// winsock2.h must precede windows.h: the project defines _WINSOCKAPI_
+// project-wide to suppress the legacy <winsock.h> from <windows.h>, but
+// recent Windows SDKs treat that sentinel as "winsock 1 was loaded" and
+// then fail with a MIGRATION ERROR when ws2def.h is reached without
+// _WINSOCK2_H. Loading winsock2.h first sets _WINSOCK2_H and clears the
+// guard for every TU that pulls this header (including moc files).
+#include <winsock2.h>
 #include <windows.h>
 
 #include <QObject>

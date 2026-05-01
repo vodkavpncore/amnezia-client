@@ -12,6 +12,8 @@
 #ifndef WINDIVERT_SHIM_H
 #define WINDIVERT_SHIM_H
 
+// winsock2.h before windows.h — see bypassrouter_win.h for rationale.
+#include <winsock2.h>
 #include <windows.h>
 
 #ifdef __cplusplus
