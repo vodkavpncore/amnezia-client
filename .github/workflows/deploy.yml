@@ -1,9 +1,11 @@
 name: 'Deploy workflow'
 
+# Auto-push trigger disabled in this fork — see bypass-build.yml for the
+# Windows-only build. The original workflow can still be invoked manually
+# via Actions → Run workflow if you need a full multi-platform build with
+# upstream secrets/runners.
 on:
-  push:
-    branches:
-      - '**'
+  workflow_dispatch:
 
 env:
   QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/ # https://download.qt.io/static/mirrorlist/
